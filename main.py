@@ -1,10 +1,55 @@
 import os
 import re
 import shutil
+import json
 from pathlib import Path
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+
+class CustomLabelFrame:
+    """
+    Widget personalizado que simula LabelFrame pero con control total de colores.
+    Reemplaza ttk.LabelFrame para evitar problemas de renderizado en Windows.
+    """
+    def __init__(self, parent, text, padding=10, **kwargs):
+        self.parent = parent
+        self.text = text
+        self.padding = padding
+        self.frame = tk.Frame(parent, **kwargs)
+        self.border_frame = tk.Frame(self.frame, bg='#cbd5e1')  # Borde gris claro por defecto
+        self.inner_frame = tk.Frame(self.border_frame, bg='#e3eef7')  # Interior azul claro por defecto
+        self.label = tk.Label(self.border_frame, text=text, font=('Segoe UI', 9, 'bold'))
+        
+        # Layout
+        self.border_frame.pack(fill='both', expand=True, padx=1, pady=1)
+        self.label.place(x=10, y=-8)  # Label sobre el borde
+        self.inner_frame.pack(fill='both', expand=True, padx=padding, pady=padding)
+        
+    def pack(self, **kwargs):
+        self.frame.pack(**kwargs)
+        
+    def grid(self, **kwargs):
+        self.frame.grid(**kwargs)
+        
+    def place(self, **kwargs):
+        self.frame.place(**kwargs)
+        
+    def config(self, **kwargs):
+        if 'bg' in kwargs or 'background' in kwargs:
+            bg = kwargs.get('bg', kwargs.get('background'))
+            self.border_frame.config(bg=bg)
+            self.frame.config(bg=bg)
+        if 'text' in kwargs:
+            self.label.config(text=kwargs['text'])
+        return self.frame.config(**kwargs)
+        
+    def winfo_children(self):
+        return self.inner_frame.winfo_children()
+        
+    def winfo_id(self):
+        return self.frame.winfo_id()
+
 
 class MiraiMirror:
     def __init__(self, root):
@@ -13,9 +58,9 @@ class MiraiMirror:
         self.root.geometry("700x650")
         self.root.resizable(False, False)
         
-        # Configurar icono (debe existir icon.ico en la misma carpeta)
+        # Configurar icono
         try:
-            self.root.iconbitmap("icon.ico")  # Para Windows
+            self.root.iconbitmap("icon.ico")
         except:
             pass
         
@@ -24,73 +69,146 @@ class MiraiMirror:
         self.dry_run = tk.BooleanVar(value=True)
         self.organize_photos = tk.BooleanVar(value=True)
         self.organize_videos = tk.BooleanVar(value=True)
+        self.current_theme = "light"
         
-        # Configurar estilo
+        # Cargar tema guardado
+        self.load_theme_preference()
+        
+        # Configurar estilos
         self.setup_styles()
+        
+        # Ahora sí crear widgets
         self.create_widgets()
         
+    def load_theme_preference(self):
+        """Carga el tema preferido del usuario"""
+        config_file = Path("mirai_mirror_config.json")
+        if config_file.exists():
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    self.current_theme = config.get('theme', 'light')
+            except:
+                self.current_theme = "light"
+        else:
+            self.current_theme = "light"
+    
+    def save_theme_preference(self):
+        """Guarda el tema preferido del usuario"""
+        config_file = Path("mirai_mirror_config.json")
+        try:
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump({'theme': self.current_theme}, f, indent=2)
+        except Exception as e:
+            print(f"Error guardando tema: {e}")
+    
+    def toggle_theme(self):
+        """Alterna entre tema claro y oscuro"""
+        self.current_theme = "dark" if self.current_theme == "light" else "light"
+        self.save_theme_preference()
+        self.apply_theme()
+    
     def setup_styles(self):
-        """Configura el estilo visual con tonos azules"""
-        style = ttk.Style()
-        
-        # Colores azules (paleta minimalista)
+        """Define las paletas de colores para ambos temas"""
         self.colors = {
-            'bg_primary': '#f0f5fa',      # Fondo claro azulado
-            'bg_secondary': '#e3eef7',    # Fondo secundario
-            'accent': '#2563eb',          # Azul primario brillante
-            'accent_dark': '#1e40af',     # Azul oscuro para hover
-            'text_primary': '#1e293b',    # Texto oscuro
-            'text_secondary': '#64748b',  # Texto gris
-            'success': '#10b981',         # Verde para éxito
-            'warning': '#f59e0b',         # Naranja para advertencia
-            'error': '#ef4444',           # Rojo para errores
-            'border': '#cbd5e1',          # Borde suave
+            'light': {
+                'bg_primary': '#f0f5fa',
+                'bg_secondary': '#e3eef7',
+                'border_color': '#cbd5e1',
+                'accent': '#2563eb',
+                'accent_dark': '#1e40af',
+                'text_primary': '#1e293b',
+                'text_secondary': '#64748b',
+                'btn_bg': '#f0f5fa',
+                'btn_fg': '#2563eb',
+                'btn_hover': '#dbeafe',
+                'entry_bg': 'white',
+                'scroll_bg': '#cbd5e1',
+                'check_bg': '#e3eef7',
+                'check_fg': '#1e293b',
+            },
+            'dark': {
+                'bg_primary': '#0f172a',
+                'bg_secondary': '#1e293b',
+                'border_color': '#334155',
+                'accent': '#3b82f6',
+                'accent_dark': '#60a5fa',
+                'text_primary': '#f1f5f9',
+                'text_secondary': '#94a3b8',
+                'btn_bg': '#1e293b',
+                'btn_fg': '#3b82f6',
+                'btn_hover': '#334155',
+                'entry_bg': '#1e293b',
+                'scroll_bg': '#334155',
+                'check_bg': '#1e293b',
+                'check_fg': '#f1f5f9',
+            }
         }
-        
-        # Configurar tema base
+    
+    def apply_theme(self):
+        """Aplica el tema a TODA la interfaz"""
+        colors = self.colors[self.current_theme]
+        style = ttk.Style()
         style.theme_use('clam')
         
-        # Frame principal
-        style.configure('TFrame', background=self.colors['bg_primary'])
-        style.configure('TLabelFrame', background=self.colors['bg_primary'], 
-                       bordercolor=self.colors['border'],
-                       fieldbackground=self.colors['bg_secondary'])
-        style.configure('TLabelframe.Label', foreground=self.colors['text_primary'],
-                       font=('Segoe UI', 9, 'bold'))
+        # Configurar estilos ttk (SOLO VÍA STYLE)
+        style.configure('TFrame', background=colors['bg_primary'])
+        style.configure('TLabel', background=colors['bg_primary'], foreground=colors['text_primary'])
+        style.configure('Title.TLabel', font=('Segoe UI', 16, 'bold'), foreground=colors['accent'], background=colors['bg_primary'])
+        style.configure('Subtitle.TLabel', font=('Segoe UI', 11), foreground=colors['text_secondary'], background=colors['bg_primary'])
+        style.configure('TButton', font=('Segoe UI', 10, 'bold'), padding=(15, 10), borderwidth=0, background=colors['btn_bg'], foreground=colors['btn_fg'])
+        style.configure('Primary.TButton', background=colors['accent'], foreground='white', borderwidth=0)
+        style.map('Primary.TButton', background=[('active', colors['accent_dark'])])
+        style.map('TButton', background=[('active', colors['btn_hover'])])
+        style.configure('TCheckbutton', background=colors['check_bg'], foreground=colors['check_fg'], font=('Segoe UI', 10), indicatorcolor=colors['accent'])
+        style.configure('TEntry', fieldbackground=colors['entry_bg'], foreground=colors['text_primary'], borderwidth=1, relief='solid', bordercolor=colors['border_color'])
+        style.configure('TScrollbar', background=colors['scroll_bg'], troughcolor=colors['bg_primary'], arrowcolor=colors['text_primary'])
         
-        # Labels
-        style.configure('TLabel', background=self.colors['bg_primary'],
-                       foreground=self.colors['text_primary'],
-                       font=('Segoe UI', 10))
-        style.configure('Title.TLabel', font=('Segoe UI', 16, 'bold'),
-                       foreground=self.colors['accent'],
-                       background=self.colors['bg_primary'])
-        style.configure('Subtitle.TLabel', font=('Segoe UI', 11),
-                       foreground=self.colors['text_secondary'],
-                       background=self.colors['bg_primary'])
+        # Actualizar CustomLabelFrames (SOLO los Frames, NO los ttk widgets internos)
+        self.update_custom_labelframes(colors)
         
-        # Buttons
-        style.configure('TButton', font=('Segoe UI', 10, 'bold'),
-                       padding=(15, 10), borderwidth=0)
-        style.configure('Primary.TButton', background=self.colors['accent'],
-                       foreground='white', borderwidth=0)
-        style.map('Primary.TButton', background=[('active', self.colors['accent_dark'])])
+        # Actualizar Text widget (tk.Text SÍ acepta .config())
+        self.log_text.config(
+            bg=colors['bg_secondary'],
+            fg=colors['text_primary'],
+            insertbackground=colors['text_primary'],
+            selectbackground=colors['accent'],
+            selectforeground='white'
+        )
         
-        # Checkbuttons
-        style.configure('TCheckbutton', background=self.colors['bg_primary'],
-                       foreground=self.colors['text_primary'],
-                       font=('Segoe UI', 10))
+        # NOTA: NO intentamos configurar ttk.Scrollbar directamente
+        # El Style ya se encarga de eso en la línea anterior: style.configure('TScrollbar', ...)
         
-        # Entries
-        style.configure('TEntry', fieldbackground='white',
-                       foreground=self.colors['text_primary'],
-                       borderwidth=1, relief='solid',
-                       bordercolor=self.colors['border'])
+        # Actualizar Entry (ttk.Entry SÍ acepta .config() para bg/fg en algunos casos, pero mejor vía Style)
+        # Si falla, confiamos en el Style
+        try:
+            self.entry_folder.config(
+                bg=colors['entry_bg'],
+                fg=colors['text_primary']
+            )
+        except:
+            pass  # Si falla, el Style ya lo configuró
         
-        # Text widget (log)
-        style.configure('Log.TFrame', background=self.colors['bg_secondary'])
+        # Actualizar botón de tema
+        self.theme_button.config(text="🌙" if self.current_theme == "light" else "☀️")
+    
+    def update_custom_labelframes(self, colors):
+        """Actualiza los CustomLabelFrames con los nuevos colores"""
+        # Actualizar frame de configuración
+        self.config_frame.border_frame.config(bg=colors['border_color'])
+        self.config_frame.inner_frame.config(bg=colors['bg_secondary'])
+        self.config_frame.frame.config(bg=colors['bg_primary'])
+        self.config_frame.label.config(fg=colors['text_primary'], bg=colors['bg_primary'])
         
+        # Actualizar frame de registro
+        self.log_frame.border_frame.config(bg=colors['border_color'])
+        self.log_frame.inner_frame.config(bg=colors['bg_secondary'])
+        self.log_frame.frame.config(bg=colors['bg_primary'])
+        self.log_frame.label.config(fg=colors['text_primary'], bg=colors['bg_primary'])
+    
     def create_widgets(self):
+        colors = self.colors[self.current_theme]
+        
         # Frame principal con padding
         main_frame = ttk.Frame(self.root, padding="20")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -100,32 +218,35 @@ class MiraiMirror:
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         
-        # === HEADER CON LOGO Y TÍTULO ===
+        # === HEADER ===
         header_frame = ttk.Frame(main_frame)
         header_frame.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
-        # Logo (puedes reemplazar con tu propio icono)
-        # Si tienes un PNG, puedes usar PhotoImage
+        # Logo
         try:
-            # Intenta cargar un icono PNG si existe
             logo = tk.PhotoImage(file="logo.png")
             logo_label = ttk.Label(header_frame, image=logo)
-            logo_label.image = logo  # Mantener referencia
+            logo_label.image = logo
             logo_label.grid(row=0, column=0, padx=(0, 10))
         except:
-            # Fallback: emoji como logo
             logo_label = ttk.Label(header_frame, text="🪞", font=('Segoe UI', 24))
             logo_label.grid(row=0, column=0, padx=(0, 10))
         
         # Título
-        title_label = ttk.Label(header_frame, text="Mirai Mirror", 
-                               style='Title.TLabel')
+        title_label = ttk.Label(header_frame, text="Mirai Mirror", style='Title.TLabel')
         title_label.grid(row=0, column=1, sticky=tk.W)
         
-        subtitle_label = ttk.Label(header_frame, 
-                                   text="Organizador Universal de Medios",
-                                   style='Subtitle.TLabel')
+        subtitle_label = ttk.Label(header_frame, text="Organizador Universal de Medios", style='Subtitle.TLabel')
         subtitle_label.grid(row=1, column=1, sticky=tk.W, pady=(2, 0))
+        
+        # Botón de tema
+        self.theme_button = ttk.Button(
+            header_frame, 
+            text="🌙" if self.current_theme == "light" else "☀️",
+            command=self.toggle_theme,
+            width=5
+        )
+        self.theme_button.grid(row=0, column=2, sticky=tk.E)
         
         # === SELECCIÓN DE CARPETA ===
         folder_frame = ttk.Frame(main_frame)
@@ -135,69 +256,68 @@ class MiraiMirror:
             row=0, column=0, sticky=tk.W, padx=(0, 10)
         )
         
-        self.entry_folder = ttk.Entry(folder_frame, textvariable=self.source_folder, 
-                                      width=50, style='TEntry')
+        self.entry_folder = ttk.Entry(folder_frame, textvariable=self.source_folder, width=50)
         self.entry_folder.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 10))
         
-        browse_btn = ttk.Button(folder_frame, text="Explorar...", 
-                               command=self.browse_folder, width=12)
+        browse_btn = ttk.Button(folder_frame, text="Explorar...", command=self.browse_folder, width=12)
         browse_btn.grid(row=0, column=2)
         
-        # === OPCIONES ===
-        option_frame = ttk.LabelFrame(main_frame, text="Configuración", padding="15")
-        option_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        # === OPCIONES (CustomLabelFrame) ===
+        self.config_frame = CustomLabelFrame(main_frame, text="Configuración", padding=15, bg=colors['bg_primary'])
+        self.config_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
         
-        # Primera fila: Tipos de archivos
-        ttk.Checkbutton(option_frame, text="📷 Fotos (Telegram & WhatsApp)", 
-                       variable=self.organize_photos).grid(
-            row=0, column=0, sticky=tk.W, padx=15, pady=5
-        )
-        ttk.Checkbutton(option_frame, text="🎬 Videos (Telegram)", 
-                       variable=self.organize_videos).grid(
-            row=0, column=1, sticky=tk.W, padx=15, pady=5
-        )
+        # Checkbuttons (dentro de inner_frame)
+        self.cb_photos = ttk.Checkbutton(self.config_frame.inner_frame, text="📷 Fotos (Telegram & WhatsApp)", variable=self.organize_photos)
+        self.cb_photos.grid(row=0, column=0, sticky=tk.W, padx=15, pady=5)
         
-        # Segunda fila: Modo prueba
-        ttk.Checkbutton(option_frame, text="🧪 Modo Prueba (solo análisis)", 
-                       variable=self.dry_run).grid(
-            row=1, column=0, columnspan=2, sticky=tk.W, padx=15, pady=5
-        )
+        self.cb_videos = ttk.Checkbutton(self.config_frame.inner_frame, text="🎬 Videos (Telegram)", variable=self.organize_videos)
+        self.cb_videos.grid(row=0, column=1, sticky=tk.W, padx=15, pady=5)
+        
+        self.cb_dryrun = ttk.Checkbutton(self.config_frame.inner_frame, text="🧪 Modo Prueba (solo análisis)", variable=self.dry_run)
+        self.cb_dryrun.grid(row=1, column=0, columnspan=2, sticky=tk.W, padx=15, pady=5)
         
         # === BOTÓN PRINCIPAL ===
         btn_frame = ttk.Frame(main_frame)
         btn_frame.grid(row=3, column=0, columnspan=3, pady=20)
         
-        action_btn = ttk.Button(btn_frame, text="🚀 Iniciar Organización", 
-                               command=self.organize_files, 
-                               style='Primary.TButton', width=25)
+        action_btn = ttk.Button(btn_frame, text="🚀 Iniciar Organización", command=self.organize_files, style='Primary.TButton', width=25)
         action_btn.pack()
         
-        # === LOG ===
-        log_frame = ttk.LabelFrame(main_frame, text="Registro de Actividad", padding="10")
-        log_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        # === LOG (CustomLabelFrame) ===
+        self.log_frame = CustomLabelFrame(main_frame, text="Registro de Actividad", padding=10, bg=colors['bg_primary'])
+        self.log_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
         
-        log_frame.columnconfigure(0, weight=1)
-        log_frame.rowconfigure(0, weight=1)
+        self.log_frame.inner_frame.columnconfigure(0, weight=1)
+        self.log_frame.inner_frame.rowconfigure(0, weight=1)
         
-        self.log_text = tk.Text(log_frame, height=10, width=80, 
-                                bg=self.colors['bg_secondary'],
-                                fg=self.colors['text_primary'],
-                                font=('Consolas', 9),
-                                bd=0, highlightthickness=0,
-                                padx=10, pady=10)
+        self.log_text = tk.Text(
+            self.log_frame.inner_frame, 
+            height=10, 
+            width=80, 
+            font=('Consolas', 9),
+            bg=colors['bg_secondary'],
+            fg=colors['text_primary'],
+            bd=0, 
+            highlightthickness=0,
+            padx=10, 
+            pady=10
+        )
         self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        scrollbar = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, 
-                                  command=self.log_text.yview)
-        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
-        self.log_text.config(yscrollcommand=scrollbar.set)
+        # Scrollbar (NO configuramos colores aquí, el Style lo hace)
+        self.scrollbar = ttk.Scrollbar(self.log_frame.inner_frame, orient=tk.VERTICAL, command=self.log_text.yview)
+        self.scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        self.log_text.config(yscrollcommand=self.scrollbar.set)
         
-        # Configurar tags para colores en el log
-        self.log_text.tag_config('info', foreground=self.colors['text_primary'])
-        self.log_text.tag_config('success', foreground=self.colors['success'])
-        self.log_text.tag_config('warning', foreground=self.colors['warning'])
-        self.log_text.tag_config('error', foreground=self.colors['error'])
+        # Tags para colores en el log
+        self.log_text.tag_config('info', foreground=colors['text_primary'])
+        self.log_text.tag_config('success', foreground='#10b981')
+        self.log_text.tag_config('warning', foreground='#f59e0b')
+        self.log_text.tag_config('error', foreground='#ef4444')
         
+        # Aplicar tema inicial
+        self.apply_theme()
+    
     def browse_folder(self):
         folder = filedialog.askdirectory(title="Selecciona la carpeta con los archivos")
         if folder:
