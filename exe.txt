@@ -1,0 +1,1 @@
+pyinstaller --onefile --windowed --name "MiraiMirror" --icon=icon.ico --add-data "logo.png;." mirai_mirror.py
